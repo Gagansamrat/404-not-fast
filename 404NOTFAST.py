@@ -1,53 +1,41 @@
-class BehaviorAnalyzer:
-    def __init__(self):
-        self.model = IsolationForest(contamination=0.1, random_state=42)
-        self.feature_names = [
-            'avg_mouse_speed',
-            'typing_speed',
-            'session_duration',
-            'navigation_count'
-        ]
-    
-    def extract_features(self, behavior: UserBehavior) -> np.ndarray:
-        """Extract numerical features from behavior data."""
-        features = {
-            'avg_mouse_speed': self._calculate_avg_mouse_speed(behavior.mouse_movements),
-            'typing_speed': self._calculate_typing_speed(behavior.keyboard_patterns),
-            'session_duration': self._calculate_session_duration(behavior.timestamp),
-            'navigation_count': len(behavior.navigation_patterns)
-        }
-        return np.array([features[name] for name in self.feature_names])
-    
-    def _calculate_avg_mouse_speed(self, movements: List[Dict[str, float]]) -> float:
-        if not movements:
-            return 0.0
-        speeds = [m.get('speed', 0.0) for m in movements]
-        return sum(speeds) / len(speeds)
-    
-    def _calculate_typing_speed(self, patterns: List[Dict[str, float]]) -> float:
-        if not patterns:
-            return 0.0
-        speeds = [p.get('speed', 0.0) for p in patterns]
-        return sum(speeds) / len(speeds)
-    
-    def _calculate_session_duration(self, timestamp: datetime) -> float:
-        return (datetime.utcnow() - timestamp).total_seconds()
-    
-    def train(self, behaviors: List[UserBehavior]):
-        """Train the anomaly detection model."""
-        X = np.array([self.extract_features(b) for b in behaviors])
-        self.model.fit(X)
-    
-    def analyze(self, behavior: UserBehavior) -> Dict[str, float]:
-        """Analyze behavior and return risk score."""
-        features = self.extract_features(behavior).reshape(1, -1)
-        anomaly_score = self.model.score_samples(features)[0]
-        
-        # Convert anomaly score to risk score (0-1 range, higher means more risky)
-        risk_score = 1 - (anomaly_score - self.model.offset_) / abs(self.model.offset_)
-        risk_score = max(0.0, min(1.0, risk_score))
-        
-        return {
-            'risk_score': risk_score,
-            'features': dict(zip(self.feature_names, features[0]))
-        }
+import cv2
+from deepface import DeepFace
+
+# Initialize webcam
+cap = cv2.VideoCapture(0)
+
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    try:
+        # Detect and analyze emotions
+        result = DeepFace.analyze(frame, actions=['emotion'], enforce_detection=False)
+
+        # Handle both new (dict) and old (list) formats
+        if isinstance(result, list):
+            
+            result = result[0]
+
+        # Extract region safely
+        region = result.get('region', {})
+        x, y, w, h = region.get('x', 0), region.get('y', 0), region.get('w', 0), region.get('h', 0)
+        emotion = result.get('dominant_emotion', 'Unknown')
+
+        # Draw rectangle & label
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.putText(frame, emotion, (x, y - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+    except Exception as e:
+        print("Error:", e)
+
+    cv2.imshow('Emotion Detection', frame)
+
+    # Press 'q' to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
